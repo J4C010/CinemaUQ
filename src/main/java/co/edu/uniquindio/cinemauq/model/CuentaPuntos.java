@@ -42,6 +42,19 @@ public class CuentaPuntos {
         }
         totalRedimido += puntos;
     }
+    public void revertir(int puntos, LocalDate hoy) {
+        int pendientes = puntos;
+        List<LoteDePuntos> recientes = lotes.stream()
+                .filter(l -> l.estaVigente(hoy) && l.getPuntosRestantes() > 0)
+                .sorted(Comparator.comparing(LoteDePuntos::getFechaObtencion).reversed())
+                .toList();
+        for (LoteDePuntos lote : recientes) {
+            if (pendientes == 0) break;
+            int tomados = lote.consumir(pendientes);
+            pendientes -= tomados;
+            totalAcumulado -= tomados;
+        }
+    }
 
     public List<LoteDePuntos> getLotes() {
         return Collections.unmodifiableList(lotes); }

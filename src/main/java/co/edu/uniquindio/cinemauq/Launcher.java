@@ -15,6 +15,7 @@ import co.edu.uniquindio.cinemauq.repository.Repositorio;
 import co.edu.uniquindio.cinemauq.repository.RepositorioEnMemoria;
 import co.edu.uniquindio.cinemauq.repository.RepositorioUsuarios;
 import co.edu.uniquindio.cinemauq.service.AuthService;
+import co.edu.uniquindio.cinemauq.service.CancelacionService;
 import co.edu.uniquindio.cinemauq.service.CompraService;
 import co.edu.uniquindio.cinemauq.service.TarjetaService;
 
@@ -34,35 +35,41 @@ public class Launcher {
                 funciones,
                 new RepositorioEnMemoria<>(Producto::getId),
                 new RepositorioEnMemoria<>(Combo::getId));
-        CompraService servicio = new CompraService(new RepositorioEnMemoria<>(Compra::getId));
+        Repositorio<Compra> repoCompras = new RepositorioEnMemoria<>(Compra::getId);
+        CompraService compras = new CompraService(repoCompras);
+        CancelacionService cancelaciones = new CancelacionService(repoCompras);
 
         Cliente ana = (Cliente) usuarios.buscarPorCorreo("ana@cinemauq.com").orElseThrow();
-        Cliente luis = (Cliente) usuarios.buscarPorCorreo("luis@cinemauq.com").orElseThrow();
-        Funcion f = funciones.listar().get(2);
-        List<Asiento> asientos = f.getSala().getAsientos();
+        Usuario admin = usuarios.buscarPorCorreo("admin@cinemauq.com").orElseThrow();
+        Funcion f0 = funciones.listar().get(0), f1 = funciones.listar().get(1), f2 = funciones.listar().get(2);
+        LocalDateTime ahora = LocalDateTime.now();
 
-        // Compra exitosa de Ana: A1 y A2 a 14000 cada una
-        Compra compra = servicio.comprar(new CompraBuilder(ana, LocalDateTime.now())
-                .funcion(f).agregarAsiento(asientos.get(0)).agregarAsiento(asientos.get(1)));
-        System.out.println(compra.getTotal());                                      // 28000.0
-        System.out.println(ana.getTarjeta().getSaldo());                            // 172000.0
-        System.out.println(f.asientosVendidos());                                   // 2
-        System.out.println(ana.getCuentaPuntos().disponibles(LocalDate.now()));     // 828
-
-        // Luis intenta el mismo asiento: no se cobra nada
+        // A: función en 3 días -> 100 %
+        Compra a = compras.comprar(new CompraBuilder(ana, ahora).funcion(f2)
+                .agregarAsiento(f2.getSala().getAsientos().get(0)));
+        System.out.println(ana.getTarjeta().getSaldo());                      // 186000.0
+        System.out.println(cancelaciones.cancelarCompra(ana, a, ahora));      // 14000.0
+        System.out.println(ana.getTarjeta().getSaldo());                      // 200000.0
+        System.out.println(f2.asientosVendidos());                            // 0
+        System.out.println(ana.getCuentaPuntos().disponibles(LocalDate.now())); // 800
         try {
-            servicio.comprar(new CompraBuilder(luis, LocalDateTime.now())
-                    .funcion(f).agregarAsiento(asientos.get(0)));
+            cancelaciones.cancelarCompra(ana, a, ahora);
         } catch (CinemaUQException e) { System.out.println("Bloqueado: " + e.getMessage()); }
-        System.out.println(luis.getTarjeta().getSaldo());                           // 50000.0
 
-        // Luis sin saldo: 4 entradas de 18000 = 72000 en otra función
-        Funcion f2 = funciones.listar().get(3);
+        // B: función en 10 horas -> 80 %
+        Compra b = compras.comprar(new CompraBuilder(ana, ahora).funcion(f1)
+                .agregarAsiento(f1.getSala().getAsientos().get(0)));
+        System.out.println(cancelaciones.cancelarCompra(ana, b, ahora));      // 14400.0
+        System.out.println(ana.getTarjeta().getSaldo());                      // 196400.0
+
+        // C: función en 1 hora -> no se permite; luego la cancela el cine -> 100 %
+        Compra c = compras.comprar(new CompraBuilder(ana, ahora).funcion(f0)
+                .agregarAsiento(f0.getSala().getAsientos().get(0)));
         try {
-            CompraBuilder b = new CompraBuilder(luis, LocalDateTime.now()).funcion(f2);
-            f2.getSala().getAsientos().subList(0, 4).forEach(b::agregarAsiento);
-            servicio.comprar(b);
+            cancelaciones.cancelarCompra(ana, c, ahora);
         } catch (CinemaUQException e) { System.out.println("Bloqueado: " + e.getMessage()); }
-        System.out.println(f2.asientosVendidos());                                  // 0
+        System.out.println(cancelaciones.cancelarFuncion(admin, f0, ahora));  // 1
+        System.out.println(ana.getTarjeta().getSaldo());                      // 196400.0
+        System.out.println(c.getEstado());                                    // CANCELADA_POR_CINE
     }
 }
